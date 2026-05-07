@@ -59,6 +59,14 @@ train_datasets: dict[str, Dataset_] = {
         include_only_with_substrings=["libero_object", "agentview"],
         obs_history=5,
     ),
+    "push": L(Dataset)(
+        dataset_dir=...,
+        num_frames=61,
+        video_size=[480, 640],
+        data_fps=30.0,
+        is_val=False,
+        obs_history=5,
+    ),
 }
 
 val_datasets: dict[str, Dataset_] = {}
