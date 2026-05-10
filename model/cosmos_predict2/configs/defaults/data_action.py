@@ -7,6 +7,7 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
+from cosmos_predict2.data.action.dataset_lerobot import LeRobotDataset
 from cosmos_predict2.data.action.types import LieRepr, NormalizationType, ObsType
 from cosmos_predict2.data.resumable_sampler import ResumableDistributedSampler
 from cosmos_predict2.module.normalizer import array_to_stats
@@ -71,6 +72,17 @@ video_action_dataset_train = L(get_dataset)(data_config="${data_config}", is_tra
 video_action_dataset_val = L(get_dataset)(data_config="${data_config}", is_train=False)
 
 mock_video_action_dataset = L(MockBridgeDataset)()
+
+# LeRobot dataset placeholders — override repo_id (and optionally root,
+# t5_encoder_ckpt, etc.) in your training config before use.
+lerobot_dataset_train = L(LeRobotDataset)(
+    repo_id=MISSING,
+    train=True,
+)
+lerobot_dataset_val = L(LeRobotDataset)(
+    repo_id=MISSING,
+    train=False,
+)
 
 DATA_CONFIGS = {
     f.stem: L(get_data_config)(config_name=f.stem)
@@ -179,4 +191,48 @@ def register_training_and_val_action_data():
         package="dataloader_train",
         name="mock",
         node=mock_dataloader_train,
+    )
+
+    lerobot_dataloader_train = L(DataLoader)(
+        dataset=lerobot_dataset_train,
+        sampler=L(ResumableDistributedSampler)(
+            dataset=lerobot_dataset_train,
+            num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+            rank=L(parallel_state.get_data_parallel_rank)(),
+            shuffle=True,
+            seed=0,
+        ),
+        batch_size=MISSING,
+        prefetch_factor=8,
+        drop_last=True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+    cs.store(
+        group="dataloader_train",
+        package="dataloader_train",
+        name="lerobot",
+        node=lerobot_dataloader_train,
+    )
+
+    lerobot_dataloader_val = L(DataLoader)(
+        dataset=lerobot_dataset_val,
+        sampler=L(ResumableDistributedSampler)(
+            dataset=lerobot_dataset_val,
+            num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+            rank=L(parallel_state.get_data_parallel_rank)(),
+            shuffle=False,
+            seed=0,
+        ),
+        batch_size=1,
+        drop_last=False,
+        num_workers=0,
+        pin_memory=False,
+    )
+    cs.store(
+        group="dataloader_val",
+        package="dataloader_val",
+        name="lerobot",
+        node=lerobot_dataloader_val,
     )
