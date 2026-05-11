@@ -1,0 +1,41 @@
+img_resize_sizes: [480, 640]
+
+policy_io:
+  action:
+    workspace_rgb:
+      horizon: 56
+      normalization_type: ${NormalizationType:NONE}
+      target_repr: null
+      target_frequency: 5
+      shift_right_by: 0.2
+    lowdim_concat:
+      horizon: 90
+      normalization_type: ${NormalizationType:VARIANCE}
+      target_repr: ${LieRepr:ABSOLUTE}
+      target_frequency: 30
+      shift_right_by: 0.2
+  obs:
+    workspace_rgb:
+      horizon: 5
+      normalization_type: ${NormalizationType:NONE}
+      target_repr: null
+      target_frequency: 5
+      shift_right_by: 0
+    lowdim_concat:
+      horizon: 1
+      normalization_type: ${NormalizationType:VARIANCE}
+      target_repr: ${LieRepr:ABSOLUTE}
+      target_frequency: 30
+      shift_right_by: 0
+    language_embedding:
+      horizon: 1
+      normalization_type: ${NormalizationType:NONE}
+      target_repr: null
+      target_frequency: null
+      shift_right_by: 0
+
+concat_groups:
+  action/lowdim_concat:
+    - action/lowdim_concat
+  obs/lowdim_concat:
+    - obs/lowdim_concat

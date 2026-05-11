@@ -1,0 +1,37 @@
+# Requirements for data_preprocessing/action/precompute_t5_lerobot.py
+#
+# Python 3.12 required (lerobot constraint).
+# cosmos-predict2/imaginaire is loaded via PYTHONPATH, not installed.
+#
+# Install:  uv pip install -r requirements.txt
+# Run:      PYTHONPATH=model:lerobot/src python data_preprocessing/action/precompute_t5_lerobot.py ...
+
+# lerobot base deps (source loaded from lerobot/src via PYTHONPATH)
+torch
+torchvision
+opencv-python-headless
+Pillow
+einops
+draccus==0.10.0
+huggingface-hub
+requests
+gymnasium
+safetensors
+packaging
+termcolor
+
+# lerobot[dataset] extra
+datasets
+pandas
+pyarrow
+av
+jsonlines
+
+# T5 encoder (imaginaire.auxiliary.text_encoder, loaded from model/ via PYTHONPATH)
+transformers
+attrs
+
+# utilities
+numpy
+tqdm
+loguru

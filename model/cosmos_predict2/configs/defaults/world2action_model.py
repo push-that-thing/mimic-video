@@ -60,6 +60,7 @@ NON_FINETUNED: dict = {
 
 VIDEO_MODEL_CKPT_NAMES = [
     "v2w_pretrained_cosmos",
+    "v2w_push_that_thing",
     "v2w_bridge_lora_rank256_lr1.778e-04_bsz64_iter_000070043_fused",
     "v2w_libero_goal_agentview_lora_rank256_lr1.778e-04_bsz32_iter_000007020_fused",
     "v2w_libero_object_agentview_lora_rank256_lr1.778e-04_bsz32_iter_000008260_fused",

@@ -82,6 +82,10 @@ def main():
         "--force", action="store_true",
         help="Overwrite the cache file if it already exists",
     )
+    p.add_argument(
+        "--no-upload", action="store_true",
+        help="Skip uploading the embeddings to the HuggingFace dataset repo",
+    )
     args = p.parse_args()
 
     if args.local_only:
@@ -130,6 +134,19 @@ def main():
     print(f"\nSaved to:\n  {out_path}")
     print("\nThe LeRobotDataset adapter will find this cache automatically.")
     print("Or pass it explicitly via:\n  language_embeddings_path='" + str(out_path) + "'")
+
+    if not args.no_upload:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        remote_path = f".t5_embeddings/{cache_key}.npz"
+        print(f"\nUploading to '{args.repo_id}' at {remote_path} ...")
+        api.upload_file(
+            path_or_fileobj=str(out_path),
+            path_in_repo=remote_path,
+            repo_id=args.repo_id,
+            repo_type="dataset",
+        )
+        print("Upload complete.")
 
 
 if __name__ == "__main__":

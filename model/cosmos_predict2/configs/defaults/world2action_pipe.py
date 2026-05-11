@@ -7,6 +7,21 @@ from cosmos_predict2.models.world2action_dit import World2ActionDIT as VarNoiseW
 from imaginaire.lazy_config import LazyCall as L
 
 ACTION_DECODER_NETS = {
+    "lerobot": L(VarNoiseWorld2ActionDIT)(
+        max_horizon=91,
+        in_channels=6,
+        out_channels=6,
+        model_channels=1024,
+        num_blocks=24,
+        num_heads=8,
+        mlp_ratio=4.0,
+        atten_backend="flash_attn_no_cp",
+        crossattn_emb_channels=2048,
+        use_adaln_lora=True,
+        adaln_lora_dim=128,
+        pair_timestep_feature_rank=1024,
+        sac_config=SACConfig(mode="none", every_n_blocks=1),
+    ),
     "libero": L(VarNoiseWorld2ActionDIT)(
         max_horizon=61,
         in_channels=10,

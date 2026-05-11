@@ -1,0 +1,3 @@
+# Packages that must come from pre-built wheels — source builds are not supported.
+# (Only relevant on Linux; these packages are skipped on macOS.)
+no-build-package = ["apex", "flash-attn", "natten", "transformer-engine"]

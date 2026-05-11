@@ -101,6 +101,10 @@ for video_ckpt, data_config, xattn_layer_idx, lr, bsz in it.product(
     cfg["job"]["name"] = exp_name
     cfg["dataloader_train"] = {"batch_size": L(get_local_batch_size)(global_bsz=bsz)}
 
+    if data_config == "lerobot":
+        cfg["defaults"][5]["override /dataloader_val"] = "lerobot"
+        cfg["defaults"][6]["override /dataloader_train"] = "lerobot"
+
     if "libero" in data_config:
         cfg["checkpoint"]["save_iter"] = 99999999
         cfg["trainer"]["run_validation"] = False

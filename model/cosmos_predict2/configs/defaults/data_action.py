@@ -76,11 +76,11 @@ mock_video_action_dataset = L(MockBridgeDataset)()
 # LeRobot dataset placeholders — override repo_id (and optionally root,
 # t5_encoder_ckpt, etc.) in your training config before use.
 lerobot_dataset_train = L(LeRobotDataset)(
-    repo_id=MISSING,
+    repo_id="push-that-thing/task_1",
     train=True,
 )
 lerobot_dataset_val = L(LeRobotDataset)(
-    repo_id=MISSING,
+    repo_id="push-that-thing/task_1",
     train=False,
 )
 
