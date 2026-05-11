@@ -375,6 +375,8 @@ class Predict2Video2WorldModel(ImaginaireModel):
         """We hanlde two types of data_batch. One comes from a joint_dataloader where "dataset_name" can be used to differenciate image_batch and video_batch.
         Another comes from a dataloader which we by default assumes as video_data for video model training.
         """
+        if "vae_latent" in data_batch:
+            return False  # pre-computed latents are always video batches
         is_image = self.input_image_key in data_batch
         is_video = self.input_video_key in data_batch
         assert is_image != is_video, (
@@ -384,12 +386,15 @@ class Predict2Video2WorldModel(ImaginaireModel):
 
     def _update_train_stats(self, data_batch: dict[str, torch.Tensor]) -> None:
         is_image = self.is_image_batch(data_batch)
-        input_key = self.input_image_key if is_image else self.input_video_key
         if isinstance(self.pipe.dit, WeightTrainingStat):
-            if is_image:
-                self.pipe.dit.accum_image_sample_counter += data_batch[input_key].shape[0] * self.data_parallel_size
+            if "vae_latent" in data_batch:
+                self.pipe.dit.accum_video_sample_counter += data_batch["vae_latent"].shape[0] * self.data_parallel_size
             else:
-                self.pipe.dit.accum_video_sample_counter += data_batch[input_key].shape[0] * self.data_parallel_size
+                input_key = self.input_image_key if is_image else self.input_video_key
+                if is_image:
+                    self.pipe.dit.accum_image_sample_counter += data_batch[input_key].shape[0] * self.data_parallel_size
+                else:
+                    self.pipe.dit.accum_video_sample_counter += data_batch[input_key].shape[0] * self.data_parallel_size
 
     def draw_training_sigma_and_epsilon(self, x0_size: torch.Size, condition: Any) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size = x0_size[0]
