@@ -67,8 +67,13 @@ class LeRobotDataset(torch.utils.data.Dataset):
     action_lowdim_horizon:
         Number of action lowdim steps (looking forwards).
     target_fps:
-        Desired sampling frequency (Hz). The closest valid multiple of the
-        dataset's native fps is used automatically.
+        Sampling frequency (Hz) for **images**. Always kept at 5 Hz to match
+        the video diffusion model's fixed 56-frame output spec.
+    lowdim_target_fps:
+        Sampling frequency (Hz) for **lowdim** state and action. Set to the
+        robot's native control rate (e.g. 30 Hz for SO-101) for full-resolution
+        action prediction. ``action_lowdim_horizon`` must cover the desired time
+        window: e.g. 90 steps x (1/30 s) = 3 s.
     action_shift_s:
         How far (seconds) the action window starts after the current timestep.
     image_resize:
@@ -101,8 +106,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         action_key: str = "action",
         obs_image_horizon: int = 5,
         action_image_horizon: int = 56,
-        action_lowdim_horizon: int = 15,
+        action_lowdim_horizon: int = 90,
         target_fps: float = 5.0,
+        lowdim_target_fps: float = 30.0,
         action_shift_s: float = 0.2,
         image_resize: tuple[int, int] = (480, 640),
         language_embeddings_path: Optional[str] = None,
@@ -136,17 +142,22 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # so get_statistics() uses the same split.
 
         # --- Delta timestamps (snapped to valid multiples of 1/fps) ---
-        dt_frames = max(1, round(fps / target_fps))
-        dt_s = dt_frames / fps
+        # Images run at target_fps (5 Hz); lowdim runs at lowdim_target_fps (30 Hz).
+        dt_img_frames = max(1, round(fps / target_fps))
+        dt_img_s = dt_img_frames / fps
+
+        dt_ld_frames = max(1, round(fps / lowdim_target_fps))
+        dt_ld_s = dt_ld_frames / fps
+
         shift_frames = max(1, round(action_shift_s * fps))
         shift_s = shift_frames / fps
 
         # obs images: T frames looking backwards, ending at t=0
-        obs_img_deltas = [-(obs_image_horizon - 1 - i) * dt_s for i in range(obs_image_horizon)]
+        obs_img_deltas = [-(obs_image_horizon - 1 - i) * dt_img_s for i in range(obs_image_horizon)]
         # action images: T frames looking forwards, starting at t=shift_s
-        act_img_deltas = [shift_s + i * dt_s for i in range(action_image_horizon)]
-        # action lowdim: same temporal grid as action images
-        act_ld_deltas = [shift_s + i * dt_s for i in range(action_lowdim_horizon)]
+        act_img_deltas = [shift_s + i * dt_img_s for i in range(action_image_horizon)]
+        # action lowdim: same shift, but at native robot frequency
+        act_ld_deltas = [shift_s + i * dt_ld_s for i in range(action_lowdim_horizon)]
         self._act_ld_deltas = act_ld_deltas
 
         delta_timestamps = {
@@ -177,8 +188,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         )
         self._stats_id_val = hashlib.sha256(
             str((repo_id, root, obs_image_horizon, action_image_horizon,
-                 action_lowdim_horizon, target_fps, action_shift_s,
-                 num_val_episodes, seed, train)).encode()
+                 action_lowdim_horizon, target_fps, lowdim_target_fps,
+                 action_shift_s, num_val_episodes, seed, train)).encode()
         ).hexdigest()
 
     # ------------------------------------------------------------------
