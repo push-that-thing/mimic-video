@@ -135,40 +135,30 @@ torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experime
 
 #### LeRobot
 
-Works with any [LeRobot v3](https://github.com/huggingface/lerobot) dataset (Parquet + MP4), whether on the HuggingFace Hub or stored locally. No zarr conversion is required.
+Works with any [LeRobot v3](https://github.com/huggingface/lerobot) dataset (Parquet + MP4), whether on the HuggingFace Hub or stored locally. No zarr conversion is required. T5 language embeddings are downloaded automatically from the HuggingFace dataset repo on first run and cached at `~/.cache/mimic_lerobot_t5/`.
 
-0. Set up the preprocessing environment (Python 3.12 required by lerobot; training uses the Python 3.10 env from the main setup).
+1. Create training config.
+   1. `repo_id` is already set to `push-that-thing/task_1` in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py). Additional dataset parameters (`image_key`, `state_key`, `action_lowdim_horizon`, `lowdim_target_fps`, etc.) can be adjusted there as well.
+   2. Download the video backbone checkpoint to `model/checkpoints/video_backbone/<name>.pt` and add `<name>` to `VIDEO_MODEL_CKPT_NAMES` in [world2action_model.py](./model/cosmos_predict2/configs/defaults/world2action_model.py) if it is not already listed. Choose training hyperparameters (cross-attention layer, learning rate, batch size) in [experiment/world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
+2. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The experiment name follows the pattern `w2a_lerobot_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>` and is defined in [world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
 ```bash
-# From the repo root
+cd model
+torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=w2a_lerobot_...
+```
+
+**Using a different dataset:** update `repo_id` (and optionally `root`) on `lerobot_dataset_train` and `lerobot_dataset_val` in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py). If the new dataset does not have pre-computed T5 embeddings on HuggingFace, generate and upload them first with [precompute_t5_lerobot.py](./data_preprocessing/action/precompute_t5_lerobot.py) (requires a Python 3.12 environment with lerobot installed):
+```bash
+# Set up preprocessing environment (one-time)
 git clone https://github.com/huggingface/lerobot.git lerobot
 uv venv --python 3.12 .venv-precompute
 source .venv-precompute/bin/activate
 uv pip install -r requirements.txt
-```
 
-1. Precompute language embeddings.
-```bash
+# Compute and upload embeddings
 cd data_preprocessing/action/
-python precompute_t5_lerobot.py \
-    --repo-id username/dataset-name \
-    --root /path/to/datasets \   # omit if the dataset is on the Hub
-    --t5-ckpt /path/to/cosmos_t5_model \
-    --local-only                 # omit if the dataset is on the Hub
-```
-   Example (dataset on the Hub, T5 downloaded automatically from HuggingFace on first run):
-```bash
-# From the repo root, with lerobot cloned at lerobot/ and a Python 3.12 venv active:
-PYTHONPATH=model:lerobot/src python data_preprocessing/action/precompute_t5_lerobot.py \
+PYTHONPATH=../../model:../../lerobot/src python precompute_t5_lerobot.py \
     --repo-id push-that-thing/task_1 \
     --t5-ckpt google-t5/t5-11b
-```
-2. Create training config.
-   1. Set `repo_id` (and optionally `root`) in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py) on the `lerobot_dataset_train` and `lerobot_dataset_val` objects. Additional dataset parameters (`image_key`, `state_key`, `action_lowdim_horizon`, `lowdim_target_fps`, etc.) can be adjusted there as well.
-   2. Download the video backbone checkpoint to `model/checkpoints/video_backbone/<name>.pt` and add `<name>` to `VIDEO_MODEL_CKPT_NAMES` in [world2action_model.py](./model/cosmos_predict2/configs/defaults/world2action_model.py) if it is not already listed. Choose training hyperparameters (cross-attention layer, learning rate, batch size) in [experiment/world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
-3. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The experiment name follows the pattern `w2a_lerobot_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>` and is defined in [world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
-```bash
-cd model
-torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=w2a_lerobot_...
 ```
 
 ##### Running on Brev (NVIDIA)
@@ -180,7 +170,7 @@ Two convenience scripts at the outer repo root handle environment setup and trai
 - Clones lerobot (needed by `LeRobotDataset` at training time)
 - Downloads text encoder + tokenizer from `jonpai/mimic-video`
 - Downloads the fine-tuned video backbone to `model/checkpoints/video_backbone/v2w_push_that_thing.pt`
-- Downloads pre-computed T5 embeddings from the dataset repo to `~/.cache/mimic_lerobot_t5/`
+- Pre-warms the T5 embeddings cache from the dataset repo (`~/.cache/mimic_lerobot_t5/`) so they are ready before training starts
 
 Requires `HF_TOKEN` to be set in the environment (export it or add it as a Brev secret):
 ```bash

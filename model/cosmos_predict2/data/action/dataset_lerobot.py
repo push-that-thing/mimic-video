@@ -180,6 +180,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             language_embeddings_path=language_embeddings_path,
             t5_encoder_ckpt=t5_encoder_ckpt,
             cache_dir=t5_cache_dir,
+            repo_id=repo_id,
         )
 
         # --- Stats cache ---
@@ -311,6 +312,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         language_embeddings_path: Optional[str],
         t5_encoder_ckpt: Optional[str],
         cache_dir: pathlib.Path,
+        repo_id: Optional[str] = None,
     ) -> dict[str, np.ndarray]:
         task_strings = list(tasks.index)
 
@@ -326,14 +328,32 @@ class LeRobotDataset(torch.utils.data.Dataset):
             data = np.load(auto_cache, allow_pickle=False)
             return {t: data[t] for t in task_strings}
 
-        # 3. Compute with T5 encoder
+        # 3. Try to fetch from the HuggingFace dataset repo
+        if repo_id is not None:
+            try:
+                from huggingface_hub import hf_hub_download
+                remote_path = f".t5_embeddings/{cache_key}.npz"
+                print(f"Downloading T5 embeddings from {repo_id} ({remote_path}) ...")
+                hf_hub_download(
+                    repo_id=repo_id,
+                    filename=remote_path,
+                    repo_type="dataset",
+                    local_dir=str(cache_dir),
+                )
+                data = np.load(auto_cache, allow_pickle=False)
+                return {t: data[t] for t in task_strings}
+            except Exception as e:
+                print(f"Could not fetch T5 embeddings from HuggingFace ({e}); falling back.")
+
+        # 4. Compute with T5 encoder
         if t5_encoder_ckpt is None:
             raise ValueError(
                 "T5 language embeddings are required but not found.\n"
                 "Options:\n"
                 "  (a) Pass language_embeddings_path=<path.npz> with pre-computed embeddings.\n"
                 "  (b) Pass t5_encoder_ckpt=<ckpt_dir> to compute them now (requires GPU).\n"
-                "  (c) Run data_preprocessing/action/precompute_t5_lerobot.py first."
+                "  (c) Run data_preprocessing/action/precompute_t5_lerobot.py first.\n"
+                "  (d) Push embeddings to the HuggingFace dataset repo so they are fetched automatically."
             )
 
         from imaginaire.auxiliary.text_encoder import CosmosT5TextEncoder, CosmosT5TextEncoderConfig
