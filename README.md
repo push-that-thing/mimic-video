@@ -59,19 +59,41 @@ This assumes you have downloaded at least the text encoder, video tokenizer, and
 
 1. Extract videos and language instructions.
    1. Choose a `/path/to/dataset/`.
-   2. Populate `/path/to/dataset/video/` with `ep.mp4` and `/path/to/dataset/metas/` with `ep.txt` files. Example scripts for bridge and libero are provided in [data_preprocessing/video](./data_preprocessing/video/).
+   2. Populate `/path/to/dataset/video/` with `ep.mp4` and `/path/to/dataset/metas/` with `ep.txt` files. Example scripts for bridge, libero, and LeRobot v3 datasets are provided in [data_preprocessing/video](./data_preprocessing/video/).
+
 2. Precompute language embeddings in `/path/to/dataset/t5_xxl/`.
 ```bash
 cd data_preprocessing/video/
 python get_t5_embeddings.py --dataset_path /path/to/dataset/
 ```
-3. Create video finetuning config.
+
+3. (Recommended) Precompute VAE latents in `/path/to/dataset/vae_latents/`. The VAE encoder is frozen during fine-tuning; pre-computing its outputs once avoids re-running it every training step (~1.5× speedup on a single GPU).
+```bash
+cd data_preprocessing/video/
+python get_vae_latents.py \
+  --dataset_path /path/to/dataset/ \
+  --vae_pth      /path/to/checkpoints/video_backbone/tokenizer/tokenizer.pth
+```
+Run from `model/` with the project venv active. Expects ~2.3 MB per clip in bfloat16. If the `vae_latents/` directory is absent the dataset falls back to on-the-fly encoding automatically.
+
+4. Create video finetuning config.
    1. Add your dataset to `train_datasets` in [data_video.py](./model/cosmos_predict2/configs/defaults/data_video.py) (line 24).
    2. Add your experiment hyperparameters to [video2world.py](./model/cosmos_predict2/configs/experiment/video2world.py).
-4. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The experiment name is defined in [video2world.py](./model/cosmos_predict2/configs/experiment/video2world.py) from the step before.
+
+5. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The experiment name is defined in [video2world.py](./model/cosmos_predict2/configs/experiment/video2world.py) from the step before. Set `IMAGINAIRE_OUTPUT_ROOT` to control where checkpoints are saved.
 ```bash
-torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=...
+cd model/
+TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+IMAGINAIRE_OUTPUT_ROOT=/path/to/checkpoints \
+torchrun --nproc_per_node=<num_gpus> --master_port=12341 \
+  -m scripts.train --config=cosmos_predict2/configs/config.py -- \
+  experiment=<experiment_name> \
+  video_dataset_train.dataset_dir=/path/to/dataset/ \
+  video_dataset_val.dataset_dir=/path/to/dataset/ \
+  job.name=<run_name>
 ```
+If you hit OOM on a single GPU, reduce `dataloader_train.batch_size` and increase `trainer.grad_accum_iter` proportionally to keep the same effective batch size (e.g. `dataloader_train.batch_size=2 trainer.grad_accum_iter=16` for an effective batch size of 32).
 
 ### Action Decoder Pretraining
 
