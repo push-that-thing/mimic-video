@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import hashlib
 import os
 import pickle
@@ -117,11 +118,32 @@ class Dataset(_Dataset):
         self.data_fps = data_fps
         self.is_multi_img = is_multi_img
 
+        # Build index of pre-computed VAE latents when available.
+        # Each (t5_path, latent_path) pair becomes one dataset item.
+        latent_dir = os.path.join(self.dataset_dir, "vae_latents")
+        self._latent_items: list[tuple[str, str]] = []
+        if os.path.isdir(latent_dir):
+            for video_path in self.video_paths:
+                stem = os.path.basename(video_path).replace(".mp4", "")
+                t5_path = os.path.join(
+                    self.t5_dir,
+                    stem[:-1] + ".pickle" if is_multi_img else stem + ".pickle",
+                )
+                for lp in sorted(glob.glob(os.path.join(latent_dir, f"{stem}_start*.pt"))):
+                    self._latent_items.append((t5_path, lp))
+            if self._latent_items:
+                log.info(
+                    f"Found {len(self._latent_items)} pre-computed VAE latents — "
+                    "on-the-fly VAE encoding is disabled."
+                )
+            else:
+                log.info("vae_latents/ directory exists but is empty; falling back to on-the-fly VAE encoding.")
+
     def __str__(self) -> str:
         return f"{len(self.video_paths)} samples from {self.dataset_dir}"
 
     def __len__(self) -> int:
-        return len(self.video_paths)
+        return len(self._latent_items) if self._latent_items else len(self.video_paths)
 
     def _get_frames(self, video_path: str) -> tuple[torch.Tensor, float]:
         vr = VideoReader(video_path, ctx=cpu(0), num_threads=0)
@@ -164,7 +186,52 @@ class Dataset(_Dataset):
 
         return x, 5
 
+    def _load_t5(self, t5_embedding_path: str) -> tuple[np.ndarray, torch.Tensor]:
+        with open(t5_embedding_path, "rb") as f:
+            t5_embedding_raw = pickle.load(f)
+            assert isinstance(t5_embedding_raw, list) and len(t5_embedding_raw) == 1
+            t5_embedding = t5_embedding_raw[0]
+            assert isinstance(t5_embedding, np.ndarray) and t5_embedding.ndim == 2
+        n_tokens = t5_embedding.shape[0]
+        if n_tokens < CosmosTextEncoderConfig.NUM_TOKENS:
+            t5_embedding = np.concatenate(
+                [
+                    t5_embedding,
+                    np.zeros(
+                        (CosmosTextEncoderConfig.NUM_TOKENS - n_tokens, CosmosTextEncoderConfig.EMBED_DIM),
+                        dtype=np.float32,
+                    ),
+                ],
+                axis=0,
+            )
+        t5_text_mask = torch.zeros(CosmosTextEncoderConfig.NUM_TOKENS, dtype=torch.int64)
+        t5_text_mask[:n_tokens] = 1
+        return t5_embedding, t5_text_mask
+
     def __getitem__(self, index) -> dict | Any:
+        # Fast path: return a pre-computed VAE latent, skipping on-the-fly encoding.
+        if self._latent_items:
+            try:
+                t5_path, latent_path = self._latent_items[index]
+                latent = torch.load(latent_path, weights_only=True)  # [16, T_lat, H_lat, W_lat]
+                _C, _T, H_lat, W_lat = latent.shape
+                h, w = H_lat * 8, W_lat * 8
+                t5_embedding, t5_text_mask = self._load_t5(t5_path)
+                return {
+                    "vae_latent": latent,
+                    "obs/language_embedding": torch.from_numpy(t5_embedding),
+                    "t5_text_mask": t5_text_mask,
+                    "fps": 5,
+                    "image_size": torch.tensor([h, w, h, w]),
+                    "num_frames": self.sequence_length,
+                    "padding_mask": torch.zeros(1, h, w),
+                }
+            except Exception:
+                warnings.warn(f"Failed to load pre-computed latent: {self._latent_items[index][1]}. Skipped.")  # noqa: B028
+                warnings.warn(traceback.format_exc())  # noqa: B028
+                self.wrong_number += 1
+                return self[np.random.randint(len(self))]
+
         try:
             data = dict()
             video, fps = self._get_frames(self.video_paths[index])
@@ -185,29 +252,7 @@ class Dataset(_Dataset):
 
             _, _, h, w = video.shape
 
-            # Just add these to fit the interface
-            with open(t5_embedding_path, "rb") as f:
-                t5_embedding_raw = pickle.load(f)
-                assert isinstance(t5_embedding_raw, list)
-                assert len(t5_embedding_raw) == 1
-                t5_embedding = t5_embedding_raw[0]  # [n_tokens, CosmosTextEncoderConfig.EMBED_DIM]
-                assert isinstance(t5_embedding, np.ndarray)
-                assert len(t5_embedding.shape) == 2
-            n_tokens = t5_embedding.shape[0]
-            if n_tokens < CosmosTextEncoderConfig.NUM_TOKENS:
-                t5_embedding = np.concatenate(
-                    [
-                        t5_embedding,
-                        np.zeros(
-                            (CosmosTextEncoderConfig.NUM_TOKENS - n_tokens, CosmosTextEncoderConfig.EMBED_DIM),
-                            dtype=np.float32,
-                        ),
-                    ],
-                    axis=0,
-                )
-            t5_text_mask = torch.zeros(CosmosTextEncoderConfig.NUM_TOKENS, dtype=torch.int64)
-            t5_text_mask[:n_tokens] = 1
-
+            t5_embedding, t5_text_mask = self._load_t5(t5_embedding_path)
             data["obs/language_embedding"] = torch.from_numpy(t5_embedding)
             data["t5_text_mask"] = t5_text_mask
             data["fps"] = fps
