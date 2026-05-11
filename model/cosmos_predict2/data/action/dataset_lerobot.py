@@ -94,6 +94,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
     cache_dir:
         Directory for normalization statistics cache. Defaults to
         ``~/.cache/mimic_lerobot_stats``.
+    video_backend:
+        LeRobot video decoder backend. Defaults to ``"pyav"`` to avoid
+        TorchCodec CPU decoding issues on some CUDA training images.
     """
 
     def __init__(
@@ -117,6 +120,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         seed: int = 42,
         train: bool = True,
         cache_dir: Optional[str] = None,
+        video_backend: str = "pyav",
     ) -> None:
         _LeRobotDataset = _import_lerobot_dataset()
 
@@ -128,10 +132,11 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self._image_resize = image_resize
         self._n_obs_img = obs_image_horizon
         self._n_act_img = action_image_horizon
+        self._video_backend = video_backend
 
         # --- Episode train/val split ---
         # Load metadata only (lightweight) to discover episode count and fps.
-        _meta = _LeRobotDataset(repo_id, root=root)
+        _meta = _LeRobotDataset(repo_id, root=root, video_backend=video_backend)
         fps = _meta.fps
         all_episodes = list(range(_meta.num_episodes))
         val_set = self._sample_val_episodes(all_episodes, num_val_episodes, seed)
@@ -171,6 +176,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             root=root,
             episodes=self._episodes,
             delta_timestamps=delta_timestamps,
+            video_backend=video_backend,
         )
 
         # --- Language embeddings ---
@@ -260,6 +266,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self._repo_id,
             root=str(self._root) if self._root else None,
             episodes=self._episodes,
+            video_backend=self._video_backend,
             delta_timestamps={
                 self._state_key: [0.0],
                 self._action_key: self._act_ld_deltas,
