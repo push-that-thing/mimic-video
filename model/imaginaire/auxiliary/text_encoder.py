@@ -107,14 +107,12 @@ class CosmosT5TextEncoder(nn.Module):
         if max_length is None:
             max_length = self.config.num_tokens
 
-        batch_encoding = self.tokenizer.batch_encode_plus(
+        batch_encoding = self.tokenizer(
             prompts,
             return_tensors="pt",
             truncation=True,
             padding="max_length",
             max_length=max_length,
-            return_length=True,
-            return_offsets_mapping=False,
         )
 
         input_ids = batch_encoding.input_ids.to(self.device)
