@@ -1,0 +1,3 @@
+defaults:
+  - policy_io: lerobot
+  - _self_

@@ -140,7 +140,7 @@ Works with any [LeRobot v3](https://github.com/huggingface/lerobot) dataset (Par
 1. Create training config.
    1. `repo_id` is already set to `push-that-thing/task_1` in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py). Additional dataset parameters (`image_key`, `state_key`, `action_lowdim_horizon`, `lowdim_target_fps`, etc.) can be adjusted there as well.
    2. Download the video backbone checkpoint to `model/checkpoints/video_backbone/<name>.pt` and add `<name>` to `VIDEO_MODEL_CKPT_NAMES` in [world2action_model.py](./model/cosmos_predict2/configs/defaults/world2action_model.py) if it is not already listed. Choose training hyperparameters (cross-attention layer, learning rate, batch size) in [experiment/world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
-2. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The experiment name follows the pattern `w2a_lerobot_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>` and is defined in [world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
+2. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The general LeRobot experiment name follows the pattern `w2a_lerobot_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>`. For the SO-101 push-that-thing setup, use `so101_lerobot`, which selects the smaller SO-101 action decoder while still using the LeRobot dataset loader.
 ```bash
 cd model
 torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=w2a_lerobot_...
@@ -178,13 +178,20 @@ export HF_TOKEN=hf_xxxxxxxxxxxx
 bash .brev/setup.sh
 ```
 
-**[`scripts/train_action_decoder.sh`](../../scripts/train_action_decoder.sh)** — wraps torchrun with the correct env vars and auto-detects the GPU count. Defaults to `v2w_push_that_thing`, `lr=1.000e-04`, `layer=20`, and `bsz=128` (multi-GPU) or `bsz=1` (single GPU). All parameters are overridable via env vars:
+**[`scripts/train_action_decoder.sh`](../../scripts/train_action_decoder.sh)** — wraps torchrun with the correct env vars and auto-detects the GPU count. Defaults to `DATA_CONFIG=so101_lerobot`, `VIDEO_CKPT=v2w_push_that_thing`, `lr=1.000e-04`, `layer=20`, and `bsz=128` (multi-GPU) or `bsz=1` (single GPU). All parameters are overridable via env vars:
 ```bash
 # Single GPU
 bash scripts/train_action_decoder.sh
 
 # Multi-GPU or custom hyperparameters
 NGPU=4 BSZ=128 bash scripts/train_action_decoder.sh
+
+# Verification without launching a job
+DRY_RUN=1 NGPU=4 bash scripts/train_action_decoder.sh
+CONFIG_DRYRUN=1 NGPU=1 bash scripts/train_action_decoder.sh
+
+# Tiny end-to-end smoke test (loads dataset/checkpoints and runs two iterations)
+SMOKE=1 WANDB_MODE=offline NGPU=1 bash scripts/train_action_decoder.sh
 ```
 
 ## Evaluation

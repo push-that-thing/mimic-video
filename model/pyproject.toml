@@ -77,6 +77,7 @@ dependencies = [
   "transformers==4.51.3",
   "triton==3.2.0",
   "tyro==1.0.8",
+  "wandb==0.19.11",
   "webdataset==0.2.111",
 ]
 
