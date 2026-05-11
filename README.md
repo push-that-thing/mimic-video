@@ -171,6 +171,32 @@ cd model
 torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=w2a_lerobot_...
 ```
 
+##### Running on Brev (NVIDIA)
+
+Two convenience scripts at the outer repo root handle environment setup and training launch.
+
+**[`.brev/setup.sh`](../../.brev/setup.sh)** — run once on instance creation (Brev auto-runs it if you link the repo; otherwise run it manually after SSH-ing in). It:
+- Installs uv and builds the Python 3.10 training venv (`uv sync --extra cu126`)
+- Clones lerobot (needed by `LeRobotDataset` at training time)
+- Downloads text encoder + tokenizer from `jonpai/mimic-video`
+- Downloads the fine-tuned video backbone to `model/checkpoints/video_backbone/v2w_push_that_thing.pt`
+- Downloads pre-computed T5 embeddings from the dataset repo to `~/.cache/mimic_lerobot_t5/`
+
+Requires `HF_TOKEN` to be set in the environment (export it or add it as a Brev secret):
+```bash
+export HF_TOKEN=hf_xxxxxxxxxxxx
+bash .brev/setup.sh
+```
+
+**[`scripts/train_action_decoder.sh`](../../scripts/train_action_decoder.sh)** — wraps torchrun with the correct env vars and auto-detects the GPU count. Defaults to `v2w_push_that_thing`, `lr=1.000e-04`, `layer=20`, and `bsz=128` (multi-GPU) or `bsz=1` (single GPU). All parameters are overridable via env vars:
+```bash
+# Single GPU
+bash scripts/train_action_decoder.sh
+
+# Multi-GPU or custom hyperparameters
+NGPU=4 BSZ=128 bash scripts/train_action_decoder.sh
+```
+
 ## Evaluation
 
 We have integrated [vanilla SIMPLER-Bridge](./eval/bridge/SimplerEnv/simpler_env/main_inference.py), [human-in-the-loop SIMPLER-Bridge](./eval/bridge/SimplerEnv/simpler_env/main_inference_hil.py) (for ground-truth future video generation), and [vanilla LIBERO](./eval/libero/run.py) evals in this repo. To reproduce the sim results with our checkpoints, follow these quick steps:
