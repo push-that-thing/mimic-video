@@ -244,7 +244,8 @@ class StaticBatchNormalizer(nn.Module):
                     "clamp_max": np.concatenate([params[k]["clamp_max"] for k in group], axis=-1),
                 }
                 for k in group:
-                    params.pop(k, None)
+                    if k != new_key:
+                        params.pop(k, None)
 
         self.set_parameters(params, dtype=dtype, device=device)  # ty:ignore[invalid-argument-type]
         return self
