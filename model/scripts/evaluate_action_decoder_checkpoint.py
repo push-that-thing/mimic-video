@@ -75,7 +75,10 @@ def resolve_checkpoint(args: argparse.Namespace) -> Path:
 def to_cuda_batch(sample: dict[str, np.ndarray | torch.Tensor]) -> dict[str, torch.Tensor]:
     batch = {}
     for key, value in sample.items():
-        batch[key] = torch.as_tensor(value).unsqueeze(0).cuda(non_blocking=True)
+        tensor = torch.as_tensor(value).unsqueeze(0).cuda(non_blocking=True)
+        if torch.is_floating_point(tensor):
+            tensor = tensor.to(dtype=torch.bfloat16)
+        batch[key] = tensor
     batch["obs/language_embedding"] = batch["obs/language_embedding"].squeeze(1)
     return batch
 
@@ -103,14 +106,15 @@ def predict_from_gt_video(
     B = video_B_C_T_H_W.shape[0]
     video_sigma_B_1 = video_pipe.scheduler.sigmas[stop_step].repeat(B).unsqueeze(1)
 
-    world_pred = video_pipe.denoise(
-        video_B_C_T_H_W + video_epsilon_B_C_T_H_W * rearrange(video_sigma_B_1, "b t -> b 1 t 1 1"),
-        video_sigma_B_1,
-        condition,
-        use_cuda_graphs=False,
-        return_only_hidden_states_up_to=action_pipe.config.xattn_layer_idx,
-        return_decoded_video=False,
-    )
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        world_pred = video_pipe.denoise(
+            video_B_C_T_H_W + video_epsilon_B_C_T_H_W * rearrange(video_sigma_B_1, "b t -> b 1 t 1 1"),
+            video_sigma_B_1,
+            condition,
+            use_cuda_graphs=False,
+            return_only_hidden_states_up_to=action_pipe.config.xattn_layer_idx,
+            return_decoded_video=False,
+        )
     crossattn_emb = world_pred.hidden_states[action_pipe.config.xattn_layer_idx]
     crossattn_emb = crossattn_emb.reshape(crossattn_emb.shape[0], -1, crossattn_emb.shape[-1])
 
