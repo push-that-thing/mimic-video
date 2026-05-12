@@ -16,6 +16,7 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2.callbacks.device_monitor import DeviceMonitor
+from cosmos_predict2.callbacks.early_stopping import EarlyStopping
 from cosmos_predict2.callbacks.grad_clip import GradClip
 from cosmos_predict2.callbacks.iter_speed import IterSpeed
 from cosmos_predict2.callbacks.wandb_logger import WandBLogger
@@ -41,6 +42,16 @@ BASIC_WANDB_CALLBACKS = dict(
     wandb=L(WandBLogger)(),
 )
 
+BASIC_EARLY_STOP_CALLBACKS = dict(
+    **BASIC_CALLBACKS,
+    early_stopping=L(EarlyStopping)(),
+)
+
+BASIC_WANDB_EARLY_STOP_CALLBACKS = dict(
+    **BASIC_WANDB_CALLBACKS,
+    early_stopping=L(EarlyStopping)(),
+)
+
 
 def register_callbacks():
     cs = ConfigStore.instance()
@@ -55,4 +66,16 @@ def register_callbacks():
         package="trainer.callbacks",
         name="basic_wandb",
         node=BASIC_WANDB_CALLBACKS,
+    )
+    cs.store(
+        group="callbacks",
+        package="trainer.callbacks",
+        name="basic_earlystop",
+        node=BASIC_EARLY_STOP_CALLBACKS,
+    )
+    cs.store(
+        group="callbacks",
+        package="trainer.callbacks",
+        name="basic_wandb_earlystop",
+        node=BASIC_WANDB_EARLY_STOP_CALLBACKS,
     )

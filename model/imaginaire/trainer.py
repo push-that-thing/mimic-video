@@ -141,6 +141,7 @@ class ImaginaireTrainer:
             signal.SIGALRM,
             functools.partial(misc.timeout_handler, config.trainer.timeout_period),
         )
+        self.should_stop = False
 
     def train(
         self,
@@ -185,11 +186,14 @@ class ImaginaireTrainer:
             raise ValueError(f"Unknown distributed parallelism mode: {self.config.trainer.distributed_parallelism}")
         log.info("Starting training...")
         self.callbacks.on_train_start(model, iteration=iteration)
+        _end_training = False
         # Initial validation.
         if self.config.trainer.run_validation and iteration == 0:
             self.validate(model, dataloader_val_cfg, iteration=iteration)
             log.info("Initial validation done.")
-        _end_training = False
+            self._sync_should_stop()
+            if self.should_stop:
+                _end_training = True
         _is_first = True
         with (
             maybe_enable_profiling(self.config, global_step=iteration) as torch_profiler,
@@ -197,6 +201,8 @@ class ImaginaireTrainer:
         ):
             start_epoch, start_iter = divmod(iteration * self.config.trainer.grad_accum_iter, len(dataloader_train))
             for epoch in it.count(start_epoch):
+                if _end_training:
+                    break
                 dataloader_train.sampler.set_epoch(epoch)
                 if _is_first:
                     dataloader_train.sampler.set_start_iter(start_iter * dataloader_train.batch_size)
@@ -263,6 +269,10 @@ class ImaginaireTrainer:
                         torch.cuda.synchronize()
                         torch.cuda.empty_cache()
                         self.validate(model, dataloader_val_cfg, iteration=iteration)
+                        self._sync_should_stop()
+                        if self.should_stop:
+                            _end_training = True
+                            break
                     # This iteration is successful; reset the timeout signal.
                     signal.alarm(self.config.trainer.timeout_period)
                     if torch_profiler:
@@ -284,6 +294,9 @@ class ImaginaireTrainer:
                     torch.cuda.synchronize()
                     torch.cuda.empty_cache()
                     self.validate(model, dataloader_val_cfg, iteration=iteration)
+                    self._sync_should_stop()
+                    if self.should_stop:
+                        _end_training = True
 
         log.success("Done with training.")
         if iteration % self.config.checkpoint.save_iter != 0:
@@ -292,6 +305,12 @@ class ImaginaireTrainer:
         self.checkpointer.finalize()
         distributed.barrier()
         self.callbacks.on_app_end()
+
+    def _sync_should_stop(self) -> None:
+        if dist.is_available() and dist.is_initialized():
+            should_stop = torch.tensor(int(self.should_stop), device="cuda")
+            dist.broadcast(should_stop, src=0)
+            self.should_stop = bool(should_stop.item())
 
     def training_step(
         self,

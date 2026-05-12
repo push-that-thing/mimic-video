@@ -12,6 +12,7 @@ expected by mimic-video's training pipeline:
 
 import hashlib
 import json
+import math
 import pathlib
 import sys
 from typing import Optional
@@ -87,6 +88,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         embeddings are not already cached.
     num_val_episodes:
         Number of episodes held out for validation.
+    val_ratio:
+        Fraction of episodes held out for validation. If provided, this
+        overrides ``num_val_episodes``. For example, ``0.10`` holds out
+        approximately 10% of episodes.
     seed:
         RNG seed for train/val episode split.
     train:
@@ -117,6 +122,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         language_embeddings_path: Optional[str] = None,
         t5_encoder_ckpt: Optional[str] = None,
         num_val_episodes: int = 1,
+        val_ratio: Optional[float] = None,
         seed: int = 42,
         train: bool = True,
         cache_dir: Optional[str] = None,
@@ -139,6 +145,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         _meta = _LeRobotDataset(repo_id, root=root, video_backend=video_backend)
         fps = _meta.fps
         all_episodes = list(range(_meta.num_episodes))
+        if val_ratio is not None:
+            if not 0.0 < val_ratio < 1.0:
+                raise ValueError(f"val_ratio must be in (0, 1), got {val_ratio}.")
+            num_val_episodes = max(1, math.ceil(len(all_episodes) * val_ratio))
         val_set = self._sample_val_episodes(all_episodes, num_val_episodes, seed)
         self._episodes: Optional[list[int]] = (
             [e for e in all_episodes if e not in val_set] if train else sorted(val_set)
@@ -196,7 +206,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self._stats_id_val = hashlib.sha256(
             str((repo_id, root, obs_image_horizon, action_image_horizon,
                  action_lowdim_horizon, target_fps, lowdim_target_fps,
-                 action_shift_s, num_val_episodes, seed, train)).encode()
+                 action_shift_s, num_val_episodes, val_ratio, seed, train)).encode()
         ).hexdigest()
 
     # ------------------------------------------------------------------

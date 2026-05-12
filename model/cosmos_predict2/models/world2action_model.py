@@ -67,6 +67,7 @@ class World2ActionModelConfig:
 
     fsdp_shard_size: int  # 0 means not using fsdp, -1 means set to world size
     data_config: DictConfig
+    validation_mode: str = "full"
 
 
 def _dp_mean(x: torch.Tensor) -> torch.Tensor:
@@ -419,6 +420,12 @@ class World2ActionModel(ImaginaireModel):
     @torch.inference_mode()
     def validation_step(self, data_batch: dict, iteration: int):
         output_batch, loss = self.training_step(data_batch, iteration)
+        validation_mode = getattr(self.config, "validation_mode", "full")
+        if validation_mode == "loss_only":
+            return output_batch, loss
+        if validation_mode != "full":
+            raise ValueError(f"Unknown validation_mode={validation_mode!r}.")
+
         unnormed_x0_B_HA_A = data_batch["action/lowdim_concat"]
 
         output_batch["mses"] = collections.defaultdict(list)
