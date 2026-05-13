@@ -59,7 +59,15 @@ train_datasets: dict[str, Dataset_] = {
         include_only_with_substrings=["libero_object", "agentview"],
         obs_history=5,
     ),
-    "push": L(Dataset)(
+    "push_task1": L(Dataset)(
+        dataset_dir=...,
+        num_frames=61,
+        video_size=[480, 640],
+        data_fps=30.0,
+        is_val=False,
+        obs_history=5,
+    ),
+    "push_task2": L(Dataset)(
         dataset_dir=...,
         num_frames=61,
         video_size=[480, 640],
@@ -76,7 +84,9 @@ for k, v in train_datasets.items():
     val_datasets[k] = ds
 
 
-dataset_mixes = {}
+dataset_mixes = {
+    "push_combined": "push_task1,push_task2",
+}
 
 for name, mix in dataset_mixes.items():
     train_datasets[name] = L(MultiDataset)(**{k: train_datasets[k] for k in mix.split(",")})
