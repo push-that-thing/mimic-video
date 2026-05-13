@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import time
+import traceback
 
 import attrs
 import torch
@@ -46,7 +47,10 @@ class WandbLogger(EveryN):
             if attrs.has(type(self.trainer.config)):
                 cfg_dict = attrs.asdict(self.trainer.config, recurse=True)
         except Exception:
-            log.opt(exception=True).warning("WandbLogger: failed to serialize config; continuing with empty config")
+            log.warning(
+                "WandbLogger: failed to serialize config; continuing with empty config\n"
+                + traceback.format_exc()
+            )
         run_name = os.environ.get("WANDB_NAME") or self.trainer.config.job.name or None
         wandb.init(
             project=self.project,

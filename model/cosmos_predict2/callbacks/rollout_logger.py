@@ -13,6 +13,7 @@ so successive rollouts at increasing training steps are directly comparable.
 from __future__ import annotations
 
 import pickle
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -28,9 +29,10 @@ from imaginaire.utils import distributed, log
 
 
 def _warn(msg: str, with_traceback: bool = False) -> None:
-    """Loguru-compatible warning helper. Loguru rejects `exc_info=True`; use opt(exception=True) instead."""
+    """imaginaire.utils.log exposes bare warning(msg, rank0_only=True) without
+    loguru's .opt() helpers; format the traceback into the message instead."""
     if with_traceback:
-        log.opt(exception=True).warning(msg)
+        log.warning(f"{msg}\n{traceback.format_exc()}")
     else:
         log.warning(msg)
 
