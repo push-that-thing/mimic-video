@@ -46,7 +46,7 @@ class WandbLogger(EveryN):
             if attrs.has(type(self.trainer.config)):
                 cfg_dict = attrs.asdict(self.trainer.config, recurse=True)
         except Exception:
-            log.warning("WandbLogger: failed to serialize config; continuing with empty config", exc_info=True)
+            log.opt(exception=True).warning("WandbLogger: failed to serialize config; continuing with empty config")
         run_name = os.environ.get("WANDB_NAME") or self.trainer.config.job.name or None
         wandb.init(
             project=self.project,

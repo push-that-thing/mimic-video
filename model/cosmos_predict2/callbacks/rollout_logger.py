@@ -12,6 +12,7 @@ so successive rollouts at increasing training steps are directly comparable.
 """
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -26,13 +27,21 @@ from imaginaire.trainer import ImaginaireTrainer
 from imaginaire.utils import distributed, log
 
 
+def _warn(msg: str, with_traceback: bool = False) -> None:
+    """Loguru-compatible warning helper. Loguru rejects `exc_info=True`; use opt(exception=True) instead."""
+    if with_traceback:
+        log.opt(exception=True).warning(msg)
+    else:
+        log.warning(msg)
+
+
 def _load_clip(
     dataset_dir: str,
     ep_idx: int,
     num_video_frames: int,
     target_fps: float = 5.0,
-) -> tuple[torch.Tensor, np.ndarray, str]:
-    """Read a clip from a mimic-video formatted directory.
+) -> tuple[torch.Tensor, np.ndarray, str, torch.Tensor]:
+    """Read a clip + its precomputed T5 embedding from a mimic-video directory.
 
     Returns:
         vid_input: (1, 3, num_video_frames, H, W) float32 in [0, 1]. First 5
@@ -43,10 +52,17 @@ def _load_clip(
         gt_uint8: (num_video_frames, H, W, 3) uint8 — first ``num_video_frames``
             frames at 5 Hz, for side-by-side ground-truth display.
         prompt: text from the matching metas/ep_*.txt.
+        prompt_embedding: (1, seq_len, embed_dim) float32. Loaded from the
+            precomputed pickle at ``t5_xxl/ep_NNN.pickle``. The pipeline's T5
+            encoder is freed during training (precomputed pickles are used),
+            so passing this directly bypasses ``encode_prompt`` which would
+            otherwise hit a NoneType.parameters() error.
     """
     base = Path(dataset_dir)
     video_path = base / "video" / f"ep_{ep_idx:03d}.mp4"
     meta_path = base / "metas" / f"ep_{ep_idx:03d}.txt"
+    t5_path = base / "t5_xxl" / f"ep_{ep_idx:03d}.pickle"
+
     prompt = meta_path.read_text().strip()
 
     vr = VideoReader(str(video_path), ctx=cpu(0))
@@ -63,7 +79,13 @@ def _load_clip(
 
     vid_input = torch.from_numpy(vid_np).float().div_(255.0)
     vid_input = vid_input.permute(3, 0, 1, 2).unsqueeze(0).contiguous()  # (1, 3, T, H, W)
-    return vid_input, full_frames, prompt
+
+    with open(t5_path, "rb") as fp:
+        t5_data = pickle.load(fp)  # list of np.ndarray, one per prompt
+    arr = t5_data[0]  # (seq_len, embed_dim) float16
+    prompt_embedding = torch.from_numpy(arr).float().unsqueeze(0).contiguous()  # (1, seq_len, embed_dim)
+
+    return vid_input, full_frames, prompt, prompt_embedding
 
 
 def _unwrap(model: Any) -> Any:
@@ -93,20 +115,21 @@ class RolloutLogger(EveryN):
     def _ensure_clips_loaded(self, device: torch.device) -> None:
         if self._clips is not None:
             return
-        loaded: list[tuple[str, torch.Tensor, np.ndarray, str]] = []
+        loaded: list[tuple[str, torch.Tensor, np.ndarray, str, torch.Tensor]] = []
         for entry in self.test_clips:
             name = entry.get("name", "clip")
             try:
-                vid_input, gt_uint8, prompt = _load_clip(
+                vid_input, gt_uint8, prompt, t5 = _load_clip(
                     entry["dataset_dir"],
                     int(entry["ep_idx"]),
                     num_video_frames=self.num_video_frames,
                 )
                 vid_input = vid_input.to(device=device)
-                loaded.append((name, vid_input, gt_uint8, prompt))
-                log.info(f"RolloutLogger: cached clip '{name}' ({vid_input.shape})")
+                t5 = t5.to(device=device)
+                loaded.append((name, vid_input, gt_uint8, prompt, t5))
+                log.info(f"RolloutLogger: cached clip '{name}' vid={tuple(vid_input.shape)} t5={tuple(t5.shape)}")
             except Exception:
-                log.warning(f"RolloutLogger: failed to load test clip '{name}'", exc_info=True)
+                _warn(f"RolloutLogger: failed to load test clip '{name}'", with_traceback=True)
         self._clips = loaded
 
     def every_n_impl(
@@ -133,16 +156,16 @@ class RolloutLogger(EveryN):
             was_training = dit.training
             try:
                 dit.eval()
-                for name, vid_input, gt_uint8, prompt in self._clips:
-                    self._run_one_rollout(inner, name, vid_input, gt_uint8, prompt, iteration)
+                for name, vid_input, gt_uint8, prompt, t5 in self._clips:
+                    self._run_one_rollout(inner, name, vid_input, gt_uint8, prompt, t5, iteration)
             finally:
                 if was_training:
                     dit.train()
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
-            log.warning(f"RolloutLogger: CUDA OOM at iter {iteration}; rollout skipped")
+            _warn(f"RolloutLogger: CUDA OOM at iter {iteration}; rollout skipped")
         except Exception:
-            log.warning(f"RolloutLogger: rollout block failed at iter {iteration}", exc_info=True)
+            _warn(f"RolloutLogger: rollout block failed at iter {iteration}", with_traceback=True)
 
     def _run_one_rollout(
         self,
@@ -151,6 +174,7 @@ class RolloutLogger(EveryN):
         vid_input: torch.Tensor,
         gt_uint8: np.ndarray,
         prompt: str,
+        prompt_embedding: torch.Tensor,
         iteration: int,
     ) -> None:
         try:
@@ -159,6 +183,7 @@ class RolloutLogger(EveryN):
                     vid_input=vid_input,
                     num_latent_conditional_frames=self.num_latent_conditional_frames,
                     prompt=prompt,
+                    prompt_embedding=prompt_embedding,
                     guidance=self.guidance,
                     num_sampling_step=self.num_sampling_step,
                     seed=self.seed,
@@ -174,6 +199,6 @@ class RolloutLogger(EveryN):
             )
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
-            log.warning(f"RolloutLogger: OOM during clip '{name}' at iter {iteration}; skipped")
+            _warn(f"RolloutLogger: OOM during clip '{name}' at iter {iteration}; skipped")
         except Exception:
-            log.warning(f"RolloutLogger: clip '{name}' failed at iter {iteration}", exc_info=True)
+            _warn(f"RolloutLogger: clip '{name}' failed at iter {iteration}", with_traceback=True)
