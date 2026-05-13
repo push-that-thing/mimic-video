@@ -11,9 +11,9 @@ from __future__ import annotations
 import os
 import time
 
+import attrs
 import torch
 import wandb
-from omegaconf import OmegaConf
 
 from imaginaire.callbacks.every_n import EveryN
 from imaginaire.model import ImaginaireModel
@@ -41,7 +41,12 @@ class WandbLogger(EveryN):
     @rank0_only
     def on_train_start(self, model: ImaginaireModel, iteration: int = 0) -> None:
         del model
-        cfg_dict = OmegaConf.to_container(self.trainer.config, resolve=True, throw_on_missing=False)
+        cfg_dict: dict = {}
+        try:
+            if attrs.has(type(self.trainer.config)):
+                cfg_dict = attrs.asdict(self.trainer.config, recurse=True)
+        except Exception:
+            log.warning("WandbLogger: failed to serialize config; continuing with empty config", exc_info=True)
         run_name = os.environ.get("WANDB_NAME") or self.trainer.config.job.name or None
         wandb.init(
             project=self.project,
