@@ -102,8 +102,12 @@ for video_ckpt, data_config, xattn_layer_idx, lr, bsz in it.product(
     cfg["dataloader_train"] = {"batch_size": L(get_local_batch_size)(global_bsz=bsz)}
 
     if "lerobot" in data_config:
-        cfg["defaults"][5]["override /dataloader_val"] = "lerobot"
-        cfg["defaults"][6]["override /dataloader_train"] = "lerobot"
+        if data_config.startswith("slow_"):
+            cfg["defaults"][5]["override /dataloader_val"] = "lerobot_slow"
+            cfg["defaults"][6]["override /dataloader_train"] = "lerobot_slow"
+        else:
+            cfg["defaults"][5]["override /dataloader_val"] = "lerobot"
+            cfg["defaults"][6]["override /dataloader_train"] = "lerobot"
 
     if "libero" in data_config or "so101" in data_config:
         cfg["checkpoint"]["save_iter"] = 99999999

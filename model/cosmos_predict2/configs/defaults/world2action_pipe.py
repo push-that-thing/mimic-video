@@ -37,6 +37,23 @@ ACTION_DECODER_NETS = {
         pair_timestep_feature_rank=512,
         sac_config=SACConfig(mode="none", every_n_blocks=1),
     ),
+    # Short-horizon SO-101 variant. max_horizon=31 pairs with the slow
+    # dataloader's action_lowdim_horizon=30 (1s of action prediction at 30 Hz).
+    "slow_so101": L(VarNoiseWorld2ActionDIT)(
+        max_horizon=31,
+        in_channels=6,
+        out_channels=6,
+        model_channels=512,
+        num_blocks=12,
+        num_heads=8,
+        mlp_ratio=4.0,
+        atten_backend="flash_attn_no_cp",
+        crossattn_emb_channels=2048,
+        use_adaln_lora=True,
+        adaln_lora_dim=128,
+        pair_timestep_feature_rank=512,
+        sac_config=SACConfig(mode="none", every_n_blocks=1),
+    ),
     "libero": L(VarNoiseWorld2ActionDIT)(
         max_horizon=61,
         in_channels=10,

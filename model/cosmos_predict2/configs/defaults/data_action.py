@@ -84,6 +84,19 @@ lerobot_dataset_val = L(LeRobotDataset)(
     train=False,
 )
 
+# Slow / 1-second-chunk variants for short-horizon SO-101 policies.
+# action_lowdim_horizon=30 at 30 Hz = 1s of action prediction.
+lerobot_dataset_train_slow = L(LeRobotDataset)(
+    repo_id="push-that-thing/task_1",
+    action_lowdim_horizon=30,
+    train=True,
+)
+lerobot_dataset_val_slow = L(LeRobotDataset)(
+    repo_id="push-that-thing/task_1",
+    action_lowdim_horizon=30,
+    train=False,
+)
+
 DATA_CONFIGS = {
     f.stem: L(get_data_config)(config_name=f.stem)
     for f in (pathlib.Path(__file__).parents[1] / "dataloading").iterdir()
@@ -235,4 +248,48 @@ def register_training_and_val_action_data():
         package="dataloader_val",
         name="lerobot",
         node=lerobot_dataloader_val,
+    )
+
+    lerobot_dataloader_train_slow = L(DataLoader)(
+        dataset=lerobot_dataset_train_slow,
+        sampler=L(ResumableDistributedSampler)(
+            dataset=lerobot_dataset_train_slow,
+            num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+            rank=L(parallel_state.get_data_parallel_rank)(),
+            shuffle=True,
+            seed=0,
+        ),
+        batch_size=MISSING,
+        prefetch_factor=8,
+        drop_last=True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+    cs.store(
+        group="dataloader_train",
+        package="dataloader_train",
+        name="lerobot_slow",
+        node=lerobot_dataloader_train_slow,
+    )
+
+    lerobot_dataloader_val_slow = L(DataLoader)(
+        dataset=lerobot_dataset_val_slow,
+        sampler=L(ResumableDistributedSampler)(
+            dataset=lerobot_dataset_val_slow,
+            num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+            rank=L(parallel_state.get_data_parallel_rank)(),
+            shuffle=False,
+            seed=0,
+        ),
+        batch_size=1,
+        drop_last=False,
+        num_workers=0,
+        pin_memory=False,
+    )
+    cs.store(
+        group="dataloader_val",
+        package="dataloader_val",
+        name="lerobot_slow",
+        node=lerobot_dataloader_val_slow,
     )
