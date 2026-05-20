@@ -30,7 +30,8 @@ ACTION_DECODER_NETS = {
         num_blocks=12,
         num_heads=8,
         mlp_ratio=4.0,
-        atten_backend="flash_attn_no_cp",
+        # torch SDPA backend: flash-attn has no Blackwell (sm_120) kernels.
+        atten_backend="torch",
         crossattn_emb_channels=2048,
         use_adaln_lora=True,
         adaln_lora_dim=128,
@@ -47,7 +48,8 @@ ACTION_DECODER_NETS = {
         num_blocks=12,
         num_heads=8,
         mlp_ratio=4.0,
-        atten_backend="flash_attn_no_cp",
+        # torch SDPA backend: flash-attn has no Blackwell (sm_120) kernels.
+        atten_backend="torch",
         crossattn_emb_channels=2048,
         use_adaln_lora=True,
         adaln_lora_dim=128,

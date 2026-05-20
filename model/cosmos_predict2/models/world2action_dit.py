@@ -173,12 +173,14 @@ def torch_attention_op(q_B_S_H_D: torch.Tensor, k_B_S_H_D: torch.Tensor, v_B_S_H
     q_B_H_S_D = rearrange(q_B_S_H_D, "b ... h k -> b h ... k").view(in_q_shape[0], in_q_shape[-2], -1, in_q_shape[-1])
     k_B_H_S_D = rearrange(k_B_S_H_D, "b ... h v -> b h ... v").view(in_k_shape[0], in_k_shape[-2], -1, in_k_shape[-1])
     v_B_H_S_D = rearrange(v_B_S_H_D, "b ... h v -> b h ... v").view(in_k_shape[0], in_k_shape[-2], -1, in_k_shape[-1])
-    result_B_S_HD = rearrange(
+    # Return [B, S, H, D] (4-dim) to match flash_attn_func's output, since the
+    # caller (Attention.compute_attention) merges H and D itself.
+    result_B_S_H_D = rearrange(
         torch.nn.functional.scaled_dot_product_attention(q_B_H_S_D, k_B_H_S_D, v_B_H_S_D),
-        "b h ... l -> b ... (h l)",
+        "b h ... l -> b ... h l",
     )
 
-    return result_B_S_HD
+    return result_B_S_H_D
 
 
 class Attention(nn.Module):
