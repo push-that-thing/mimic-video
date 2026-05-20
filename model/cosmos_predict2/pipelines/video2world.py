@@ -617,6 +617,19 @@ class Video2WorldPipeline(BasePipeline):
     def get_data_and_condition(
         self, data_batch: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor, TextCondition]:
+        # Fast path: dataset pre-computed the VAE latent; skip the frozen encoder entirely.
+        if "vae_latent" in data_batch:
+            latent_state = data_batch["vae_latent"].to(**self.tensor_kwargs).contiguous().float()
+            condition = self.conditioner(data_batch)
+            condition = condition.edit_data_type(DataType.VIDEO)
+            condition = condition.set_video_condition(
+                gt_frames=latent_state.to(**self.tensor_kwargs),
+                random_min_num_conditional_frames=self.config.min_num_conditional_frames,
+                random_max_num_conditional_frames=self.config.max_num_conditional_frames,
+                num_conditional_frames=data_batch.get(NUM_CONDITIONAL_FRAMES_KEY, None),
+            )
+            return None, latent_state, condition
+
         self._normalize_video_databatch_inplace(data_batch)
         self._augment_image_dim_inplace(data_batch)
         is_image_batch = self.is_image_batch(data_batch)

@@ -20,6 +20,7 @@ import pandas as pd
 import psutil
 import pynvml
 import torch
+import wandb
 
 from imaginaire.callbacks.every_n import EveryN
 from imaginaire.model import ImaginaireModel
@@ -143,6 +144,11 @@ class DeviceMonitor(EveryN):
         df, summary_df = log_prof_data(data_list, iteration)
         if self.rank == 0:
             log.info(f"{self.name} Stats:\n{summary_df.to_string()}")
+            if wandb.run is not None:
+                wandb.log(
+                    {f"device/{k}": v for k, v in prof_data.items()},
+                    step=iteration,
+                )
             if self.log_memory_detail:
                 memory_stats = torch.cuda.memory_stats()
 

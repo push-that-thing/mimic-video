@@ -19,7 +19,7 @@ from hydra.core.config_store import ConfigStore
 from megatron.core import parallel_state
 from omegaconf import MISSING
 
-from cosmos_predict2.callbacks.video_eval import VideoEvalCallback
+from cosmos_predict2.callbacks.rollout_logger import RolloutLogger
 from cosmos_predict2.configs.defaults.data_video import train_datasets
 from imaginaire.lazy_config import LazyCall as L
 
@@ -59,7 +59,13 @@ BASE: dict = dict(
         logging_iter=1_000,
         run_validation=False,
         callbacks=dict(
-            video_eval=L(VideoEvalCallback)(fuse_lora=MISSING),
+            rollout_logger=L(RolloutLogger)(
+                test_clips=[],
+                rollout_iter=500,
+                num_sampling_step=25,
+                guidance=5.0,
+                seed=0,
+            ),
         ),
     ),
     optimizer=dict(
@@ -69,7 +75,7 @@ BASE: dict = dict(
 
 lrs = np.logspace(-5, -3, 9)[[5]]
 bszs = [32]
-ranks = [32, 64, 256]
+ranks = [32]
 
 
 def get_local_batch_size(global_bsz: int) -> int:
@@ -86,6 +92,8 @@ cs = ConfigStore.instance()
 
 for rank in ranks:
     for dataset in train_datasets:
+        if dataset in ("push_task1", "push_task2"):
+            continue
         for lr in lrs:
             for bsz in bszs:
                 train_type = f"lora_rank{rank}" if rank is not None else "fullft"
@@ -110,8 +118,6 @@ for rank in ranks:
                             lora_target_modules="q_proj,k_proj,v_proj,output_proj,x_embedder.proj.1,linear_1,linear_2,mlp.layer1,mlp.layer2",
                         )
                     )
-                cfg["trainer"]["callbacks"]["video_eval"]["fuse_lora"] = rank is not None
-
                 cs.store(
                     group="experiment",
                     package="_global_",
