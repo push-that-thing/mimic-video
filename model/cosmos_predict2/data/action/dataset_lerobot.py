@@ -127,7 +127,15 @@ class LeRobotDataset(torch.utils.data.Dataset):
         train: bool = True,
         cache_dir: Optional[str] = None,
         video_backend: str = "pyav",
+        tolerance_s: float = 0.04,
     ) -> None:
+        # tolerance_s: forwarded to LeRobotDataset for delta-timestamp matching.
+        # The lerobot default of 1e-4 is far stricter than a single 30 Hz frame
+        # interval (33 ms), so datasets produced by `lerobot-edit-dataset merge`
+        # (which can introduce one-frame timestamp jitter relative to the original
+        # episode boundaries) trip the strict tolerance during stats compute /
+        # __getitem__. 0.04 (40 ms) allows up to roughly one 30 Hz frame of slop
+        # while still catching gross timestamp corruption.
         _LeRobotDataset = _import_lerobot_dataset()
 
         self._repo_id = repo_id
@@ -139,6 +147,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self._n_obs_img = obs_image_horizon
         self._n_act_img = action_image_horizon
         self._video_backend = video_backend
+        self._tolerance_s = tolerance_s
 
         # --- Episode train/val split ---
         # Load metadata only (lightweight) to discover episode count and fps.
@@ -187,6 +196,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             episodes=self._episodes,
             delta_timestamps=delta_timestamps,
             video_backend=video_backend,
+            tolerance_s=tolerance_s,
         )
 
         # --- Language embeddings ---
@@ -277,6 +287,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             root=str(self._root) if self._root else None,
             episodes=self._episodes,
             video_backend=self._video_backend,
+            tolerance_s=self._tolerance_s,
             delta_timestamps={
                 self._state_key: [0.0],
                 self._action_key: self._act_ld_deltas,
