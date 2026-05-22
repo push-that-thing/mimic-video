@@ -73,26 +73,29 @@ video_action_dataset_val = L(get_dataset)(data_config="${data_config}", is_train
 
 mock_video_action_dataset = L(MockBridgeDataset)()
 
-# LeRobot dataset placeholders — override repo_id (and optionally root,
-# t5_encoder_ckpt, etc.) in your training config before use.
+# LeRobot dataset placeholders — repo_id must be overridden via
+# dataloader_train.dataset.repo_id / dataloader_val.dataset.repo_id
+# (set HF_DATASET_REPO when launching via train_action_decoder.sh).
+_UNSET_REPO_ID = "UNSET_SET_HF_DATASET_REPO"
+
 lerobot_dataset_train = L(LeRobotDataset)(
-    repo_id="push-that-thing/task_1",
+    repo_id=_UNSET_REPO_ID,
     train=True,
 )
 lerobot_dataset_val = L(LeRobotDataset)(
-    repo_id="push-that-thing/task_1",
+    repo_id=_UNSET_REPO_ID,
     train=False,
 )
 
 # Slow / 1-second-chunk variants for short-horizon SO-101 policies.
 # action_lowdim_horizon=30 at 30 Hz = 1s of action prediction.
 lerobot_dataset_train_slow = L(LeRobotDataset)(
-    repo_id="push-that-thing/task_1",
+    repo_id=_UNSET_REPO_ID,
     action_lowdim_horizon=30,
     train=True,
 )
 lerobot_dataset_val_slow = L(LeRobotDataset)(
-    repo_id="push-that-thing/task_1",
+    repo_id=_UNSET_REPO_ID,
     action_lowdim_horizon=30,
     train=False,
 )

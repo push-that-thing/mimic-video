@@ -135,31 +135,47 @@ torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experime
 
 #### LeRobot
 
-Works with any [LeRobot v3](https://github.com/huggingface/lerobot) dataset (Parquet + MP4), whether on the HuggingFace Hub or stored locally. No zarr conversion is required. T5 language embeddings are downloaded automatically from the HuggingFace dataset repo on first run and cached at `~/.cache/mimic_lerobot_t5/`.
+You need three things: a **dataset** on HuggingFace (any [LeRobot v3](https://github.com/huggingface/lerobot) format, Parquet + MP4), a **fine-tuned video backbone** checkpoint, and the **T5 text encoder** checkpoint (provided). One script handles everything else — embeddings, config, and training.
 
-1. Create training config.
-   1. `repo_id` is already set to `push-that-thing/task_1` in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py). Additional dataset parameters (`image_key`, `state_key`, `action_lowdim_horizon`, `lowdim_target_fps`, etc.) can be adjusted there as well.
-   2. Download the video backbone checkpoint to `model/checkpoints/video_backbone/<name>.pt` and add `<name>` to `VIDEO_MODEL_CKPT_NAMES` in [world2action_model.py](./model/cosmos_predict2/configs/defaults/world2action_model.py) if it is not already listed. Choose training hyperparameters (cross-attention layer, learning rate, batch size) in [experiment/world2action.py](./model/cosmos_predict2/configs/experiment/world2action.py).
-2. Start training with [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html). The general LeRobot experiment name follows the pattern `w2a_lerobot_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>`. For the SO-101 push-that-thing setup, use `so101_lerobot`, which selects the smaller SO-101 action decoder while still using the LeRobot dataset loader.
 ```bash
-cd model
-torchrun -m scripts.train --config=cosmos_predict2/configs/config.py -- experiment=w2a_lerobot_...
+bash scripts/lerobot_train.sh
 ```
 
-**Using a different dataset:** update `repo_id` (and optionally `root`) on `lerobot_dataset_train` and `lerobot_dataset_val` in [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py). If the new dataset does not have pre-computed T5 embeddings on HuggingFace, generate and upload them first with [precompute_t5_lerobot.py](./data_preprocessing/action/precompute_t5_lerobot.py) (requires a Python 3.12 environment with lerobot installed):
-```bash
-# Set up preprocessing environment (one-time)
-git clone https://github.com/huggingface/lerobot.git lerobot
-uv venv --python 3.12 .venv-precompute
-source .venv-precompute/bin/activate
-uv pip install -r requirements.txt
+You can run it as above with no arguments to get an interactive shell session, or pass everything at once:
 
-# Compute and upload embeddings
-cd data_preprocessing/action/
-PYTHONPATH=../../model:../../lerobot/src python precompute_t5_lerobot.py \
-    --repo-id push-that-thing/task_1 \
-    --t5-ckpt google-t5/t5-11b
+```bash
+bash scripts/lerobot_train.sh \
+    --repo-id myorg/my-dataset \
+    --video-ckpt v2w_my_finetune \
+    --t5-ckpt model/checkpoints/text_encoder
 ```
+
+Trained checkpoints are saved to `model/checkpoints/vam/<group>/<experiment>/checkpoints/`.
+
+##### What the script does under the hood
+
+1. **Precomputes T5 embeddings** — encodes every unique task prompt in your dataset and uploads the result to your HuggingFace dataset repo. This step is skipped automatically if the embeddings are already cached. No zarr conversion is needed; datasets are streamed directly in Parquet + MP4 format.
+
+2. **Registers your checkpoint** — adds the video backbone name to the model config automatically. No manual edits to [world2action_model.py](./model/cosmos_predict2/configs/defaults/world2action_model.py) or [data_action.py](./model/cosmos_predict2/configs/defaults/data_action.py) required.
+
+3. **Launches distributed training** via `torchrun`. GPU count is auto-detected. The experiment name is auto-generated as `w2a_<data_config>_<video_ckpt>_lr<lr>_layer<idx>_bsz<bsz>` unless you supply `--experiment-name`.
+
+##### Hyperparameters
+
+All have sensible defaults. The interactive shell will ask if you want to configure them; you can also pass them directly:
+
+| Argument | Default | Description |
+|---|---|---|
+| `--data-config` | `so101_lerobot` | Action decoder variant (`so101_lerobot`, `lerobot`, `slow_so101_lerobot`, …) |
+| `--lr` | `1e-4` | Learning rate |
+| `--layer` | `20` | Cross-attention layer index in the video backbone |
+| `--bsz` | `128` multi-GPU / `1` single-GPU | Global batch size |
+| `--experiment-name` | auto-generated | Custom run name |
+| `--action-lowdim-horizon` | dataset default | Action prediction horizon (steps) |
+
+Extra flags: `--skip-precompute` if embeddings are already on HuggingFace; `--no-upload` to skip uploading them; `--local-only --root /path/to/data` for fully offline datasets.
+
+The lerobot clone and Python 3.12 precompute venv (`.venv-precompute`) are created automatically at `mimic-video/` on first run.
 
 ##### Running on Brev (NVIDIA)
 
